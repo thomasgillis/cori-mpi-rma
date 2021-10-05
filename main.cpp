@@ -9,7 +9,8 @@
 #define N 40
 #define NS 10
 
-static int rank_comm[2] = {3, 35};
+//static int rank_comm[2] = {3, 35};
+static int rank_comm[2] = {0, 2};
 
 int main(int argc, char** argv){
     MPI_Init(&argc,&argv);
@@ -37,7 +38,7 @@ int main(int argc, char** argv){
     int* other = (int*)malloc(sizeof(int) * size);
     for (int i = 0; i < size; ++i) {
         array[i] = rank;
-        other    = -1;
+        other[i] = -1;
     }
 
     // associate the window with that array
