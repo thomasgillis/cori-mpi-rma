@@ -6,15 +6,17 @@
 #include <cstring>
 #include <limits>
 
-#define N 40
-#define NS 5
+#define N 40 // N is the 1D size of the 3D array
+#define NS 5 // NS is the size of the subarray (exchanged as one block)
 
-//static int rank_comm[2] = {3, 35};
+// explicitly specify the two nodes that will communicate
+// (it's not needed but convenient to investigate multiple nodes issues)
 static int rank_comm[2] = {0, 1};
+
 
 int main(int argc, char** argv){
     MPI_Init(&argc,&argv);
-
+    //--------------------------------------------------------------------------
     // get usefull MPI information
     int rank, comm_size;
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
@@ -32,6 +34,7 @@ int main(int argc, char** argv){
         fflush(stdout);
     }
 
+    //--------------------------------------------------------------------------
     // allocate the array of size [N x N x N]
     int  size  = N * N * N;
     int* array = (int*)malloc(sizeof(int) * size);
@@ -62,32 +65,29 @@ int main(int argc, char** argv){
     MPI_Group_incl(global_group,n_in_group,&next_rank,&next_group);
     MPI_Group_free(&global_group);
 
-
+    //--------------------------------------------------------------------------
     // start
-    MPI_Win_post(prev_group,0,window);
-    MPI_Win_start(next_group,0,window);
-    
-    
-    
+    MPI_Win_post(prev_group, 0, window);
+    MPI_Win_start(next_group, 0, window);
+
     if (is_comm) {
         printf("starting the MPI_Gets\n");
         fflush(stdout);
 
-        // for each submatrix
-        for(int i2=0;i2<N;i2+=NS){
-            for(int i1=0; i1<N; i1 += NS){
-                for(int i0=0; i0<N; i0+=NS){
-
-                    // get the datatype to get the rank in an array of size [2,2,2]
+        // for each submatrix of size NSxNSxNS
+        for (int i2 = 0; i2 < N; i2 += NS) {
+            for (int i1 = 0; i1 < N; i1 += NS) {
+                for (int i0 = 0; i0 < N; i0 += NS) {
+                    // get the datatype corresponding to the sub-array
                     MPI_Datatype type1, type2;
                     MPI_Type_create_hvector(NS, NS, N * sizeof(int), MPI_INT, &type1);
                     MPI_Type_create_hvector(NS, 1, N * N * sizeof(int), type1, &type2);
                     MPI_Type_commit(&type2);
                     MPI_Type_free(&type1);
 
-                    // start the MPI_Get
-                    int offset = i0 + N * (i1 + N* i2);
-                    MPI_Get(other+offset,1,type2,next_rank,offset,1,type2,window);
+                    // do the MPI_Get
+                    int offset = i0 + N * (i1 + N * i2);
+                    MPI_Get(other + offset, 1, type2, next_rank, offset, 1, type2, window);
 
                     // free the type
                     MPI_Type_free(&type2);
@@ -106,37 +106,21 @@ int main(int argc, char** argv){
         fflush(stdout);
     }
     MPI_Win_wait(window);
-
+    //--------------------------------------------------------------------------
+    // make sure we have the correct result
     if(is_comm){
+        // randomly pick two elements
         printf("I am rank %d and the other one is %d (answer = %d)\n",rank,other[8+N*(3+N*3)],next_rank); fflush(stdout);
         printf("I am rank %d and the other one is %d (answer = %d)\n",rank,other[1+N*(0+N*9)],next_rank); fflush(stdout);
     }
 
-    // free
-    if (is_comm) {
-        printf("free the groups\n");
-        fflush(stdout);
-    }
+
     MPI_Group_free(&next_group);
     MPI_Group_free(&prev_group);
-
-    if (is_comm) {
-        printf("free the window\n");
-        fflush(stdout);
-    }
     MPI_Win_free(&window);
 
-    if (is_comm) {
-        printf("free the arrays\n");
-        fflush(stdout);
-    }
     free(array);
     free(other);
-
-    if (is_comm) {
-        printf("Finalize\n");
-        fflush(stdout);
-    }
 
     MPI_Finalize();
 }
