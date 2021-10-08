@@ -6,6 +6,8 @@
 #include <cstring>
 #include <limits>
 
+#define SCALABLE_SYNC
+
 #define N 40 // N is the 1D size of the 3D array
 #define NS 5 // NS is the size of the subarray (exchanged as one block)
 
@@ -61,14 +63,18 @@ int main(int argc, char** argv){
     }
     MPI_Group prev_group, next_group, global_group;
     MPI_Comm_group(MPI_COMM_WORLD, &global_group);
-    MPI_Group_incl(global_group,n_in_group,&prev_rank,&prev_group);
-    MPI_Group_incl(global_group,n_in_group,&next_rank,&next_group);
+    MPI_Group_incl(global_group, n_in_group, &prev_rank, &prev_group);
+    MPI_Group_incl(global_group, n_in_group, &next_rank, &next_group);
     MPI_Group_free(&global_group);
 
     //--------------------------------------------------------------------------
-    // start
+
+#ifdef SCALABLE_SYNC
     MPI_Win_post(prev_group, 0, window);
     MPI_Win_start(next_group, 0, window);
+#else
+    MPI_Win_fence(0, window);
+#endif
 
     if (is_comm) {
         printf("starting the MPI_Gets\n");
@@ -96,6 +102,7 @@ int main(int argc, char** argv){
         }
     }
 
+#ifdef SCALABLE_SYNC
     if (is_comm) {
         printf("starting the MPI_Win_complete\n");
         fflush(stdout);
@@ -106,6 +113,9 @@ int main(int argc, char** argv){
         fflush(stdout);
     }
     MPI_Win_wait(window);
+#else
+    MPI_Win_fence(0, window);
+#endif
     //--------------------------------------------------------------------------
     // make sure we have the correct result
     if(is_comm){
