@@ -6,16 +6,6 @@
 #include <cstring>
 #include <limits>
 
-#define SCALABLE_SYNC
-
-#define N 40 // N is the 1D size of the 3D array
-#define NS 5 // NS is the size of the subarray (exchanged as one block)
-
-// explicitly specify the two nodes that will communicate
-// (it's not needed but convenient to investigate multiple nodes issues)
-static int rank_comm[2] = {0, 1};
-
-
 int main(int argc, char** argv){
     MPI_Init(&argc,&argv);
     //--------------------------------------------------------------------------
@@ -24,7 +14,8 @@ int main(int argc, char** argv){
     MPI_Comm_rank(MPI_COMM_WORLD,&rank);
     MPI_Comm_size(MPI_COMM_WORLD,&comm_size);
 
-    int result;
+    // get a random information to share
+    int result = 1729;
 
     // associate the window with that array
     MPI_Info info;
@@ -44,7 +35,8 @@ int main(int argc, char** argv){
     MPI_Win_complete(window);
     MPI_Win_wait(window);
 
-    MPI_Group_free(&group);
+    // do not free the group
+    //MPI_Group_free(&group);
     MPI_Win_free(&window);
 
 

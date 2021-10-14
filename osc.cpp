@@ -103,15 +103,7 @@ int main(int argc, char** argv){
     }
 
 #ifdef SCALABLE_SYNC
-    if (is_comm) {
-        printf("starting the MPI_Win_complete\n");
-        fflush(stdout);
-    }
     MPI_Win_complete(window);
-    if (is_comm) {
-        printf("starting the MPI_Win_wait\n");
-        fflush(stdout);
-    }
     MPI_Win_wait(window);
 #else
     MPI_Win_fence(0, window);
