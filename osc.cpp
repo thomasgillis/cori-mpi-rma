@@ -6,6 +6,8 @@
 #include <cstring>
 #include <limits>
 
+#define CONFIG_LEN 1024
+
 // communication modes
 #define COMM_SENDRECV 0
 #define COMM_RMA_ACTV 1
@@ -97,6 +99,7 @@ int main(int argc, char** argv){
     MPI_Info_free(&info);
 #elif (M_ALLOC == ALLOC_WIN)
 #if (M_RMA == RMA_GET)
+    int* array;
     int* other = (int*)malloc(sizeof(int) * size);
     MPI_Info info;
     MPI_Info_create(&info);
@@ -104,6 +107,7 @@ int main(int argc, char** argv){
     MPI_Win_allocate(size * sizeof(int), sizeof(int), info, MPI_COMM_WORLD,&array, &window);
     MPI_Info_free(&info);
 #elif (M_RMA == RMA_PUT)
+    int* other;
     int* array = (int*)malloc(sizeof(int) * size);
     MPI_Info info;
     MPI_Info_create(&info);
@@ -179,7 +183,7 @@ int main(int argc, char** argv){
 #if (M_RMA == RMA_GET)
               MPI_Get(other + offset, 1, type2, next_rank, offset, 1, type2, window);
 #elif (M_RMA == RMA_PUT)
-              MPI_PUT(array + offset, 1, type2, next_rank, offset, 1, type2, window);
+              MPI_Put(array + offset, 1, type2, next_rank, offset, 1, type2, window);
 #endif
 #elif (M_COMM == COMM_SENDRECV)
               MPI_Irecv(other + offset, 1, type2, prev_rank, 0, MPI_COMM_WORLD,
@@ -213,23 +217,29 @@ int main(int argc, char** argv){
     mtime_global /= comm_size;
 
     if (rank == 0) {
-        char config[512];
+
+        char config[CONFIG_LEN];
 #if (M_COMM == COMM_RMA_ACTV)
-        snprintf(config,512,"[RMA-ACTIVE,");
+        snprintf(config,CONFIG_LEN,"[RMA-ACTIVE,");
 #elif (M_COMM == COMM_RMA_FENC)
-        snprintf(config,512,"[RMA-FENCE,");
+        snprintf(config,CONFIG_LEN,"[RMA-FENCE,");
 #elif (M_COMM == COMM_SENDRECV)
-        snprintf(config,512,"[SEND-RECV,");
+        snprintf(config,CONFIG_LEN,"[SEND-RECV,");
 #endif
 #if (M_ALLOC == ALLOC_WIN)
-        snprintf(config,512,"%s ALLOC-WIN,",config);
+        snprintf(config,CONFIG_LEN,"%s ALLOC-WIN,",config);
 #elif (M_ALLOC == ALLOC_USR)
-        snprintf(config,512,"%s ALLOC-USR,",config);
+        snprintf(config,CONFIG_LEN,"%s ALLOC-USR,",config);
 #endif
 #if (M_RMA == RMA_PUT)
-        snprintf(config,512,"%s RMA-PUT,",config);
+        snprintf(config,CONFIG_LEN,"%s RMA-PUT,",config);
 #elif (M_RMA == RMA_GET)
-        snprintf(config,512,"%s RMA-GET,",config);
+        snprintf(config,CONFIG_LEN,"%s RMA-GET,",config);
+#endif
+#if (M_MEM == MEM_DATATYPE)
+        snprintf(config,CONFIG_LEN,"%s DATATYPE,",config);
+#elif (M_MEM == MEM_CONTIG)
+        snprintf(config,CONFIG_LEN,"%s CONTIG,",config);
 #endif
         fprintf(stdout,
                 "%s %d MSGS] time = %f ms > msg size = %f kB > ttl bdw = %f GB/s\n",
@@ -255,10 +265,9 @@ int main(int argc, char** argv){
     MPI_Win_free(&window);
 #elif (M_ALLOC == ALLOC_WIN)
 #if (M_RMA == RMA_PUT)
-    free(other);
+    free(array);
     MPI_Win_free(&window);
 #elif (M_RMA == RMA_GET)
-    free(array);
     free(other);
     MPI_Win_free(&window);
 #endif
