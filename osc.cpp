@@ -14,6 +14,12 @@
 #define MEM_DATATYPE 0
 #define MEM_CONTIG 1
 
+#define RMA_PUT 0
+#define RMA_GET 1
+
+#define ALLOC_WIN 0
+#define ALLOC_USR 1
+
 #ifdef COMM_MODE
 #define M_COMM COMM_MODE
 #else
@@ -38,6 +44,18 @@
 #define M_NS 5 // NS is the size of the subarray (exchanged as one block)
 #endif
 #define IMAX 100
+
+#ifdef RMA
+#define M_RMA RMA
+#else
+#define M_RMA RMA_PUT
+#endif
+
+#ifdef ALLOC
+#define M_ALLOC ALLOC
+#else
+#define M_ALLOC ALLOC_WIN
+#endif
 
 static int get_next_rank(const int rank, const int comm_size) {
   return (rank + comm_size / 2) % comm_size;
@@ -64,19 +82,41 @@ int main(int argc, char** argv){
     //--------------------------------------------------------------------------
     // allocate the array of size [N x N x N]
     int  size  = M_N * M_N * M_N;
+#if (M_ALLOC == ALLOC_USR || M_COMM == COMM_SENDRECV)
     int* array = (int*)malloc(sizeof(int) * size);
     int* other = (int*)malloc(sizeof(int) * size);
+
+    MPI_Info info;
+    MPI_Info_create(&info);
+    MPI_Win window = MPI_WIN_NULL;
+#if (M_RMA == RMA_GET)
+    MPI_Win_create(array, size * sizeof(int), sizeof(int), info, MPI_COMM_WORLD, &window);
+#elif (M_RMA == RMA_PUT)
+    MPI_Win_create(other, size * sizeof(int), sizeof(int), info, MPI_COMM_WORLD, &window);
+#endif
+    MPI_Info_free(&info);
+#elif (M_ALLOC == ALLOC_WIN)
+#if (M_RMA == RMA_GET)
+    int* other = (int*)malloc(sizeof(int) * size);
+    MPI_Info info;
+    MPI_Info_create(&info);
+    MPI_Win window = MPI_WIN_NULL;
+    MPI_Win_allocate(size * sizeof(int), sizeof(int), info, MPI_COMM_WORLD,&array, &window);
+    MPI_Info_free(&info);
+#elif (M_RMA == RMA_PUT)
+    int* array = (int*)malloc(sizeof(int) * size);
+    MPI_Info info;
+    MPI_Info_create(&info);
+    MPI_Win window = MPI_WIN_NULL;
+    MPI_Win_allocate(size * sizeof(int), sizeof(int), info, MPI_COMM_WORLD,&other, &window);
+    MPI_Info_free(&info);
+#endif
+#endif
     for (int i = 0; i < size; ++i) {
         array[i] = rank;
         other[i] = -1;
     }
 
-    // associate the window with that array
-    MPI_Info info;
-    MPI_Info_create(&info);
-    MPI_Win window = MPI_WIN_NULL;
-    MPI_Win_create(array, size * sizeof(int), sizeof(int), info, MPI_COMM_WORLD, &window);
-    MPI_Info_free(&info);
 
     // create the communication groups
     //int n_in_group = (is_comm);
@@ -136,9 +176,11 @@ int main(int argc, char** argv){
 #endif
 
 #if (M_COMM == COMM_RMA_ACTV || M_COMM == COMM_RMA_FENC)
-              // do the MPI_Get
-              MPI_Get(other + offset, 1, type2, next_rank, offset, 1, type2,
-                      window);
+#if (M_RMA == RMA_GET)
+              MPI_Get(other + offset, 1, type2, next_rank, offset, 1, type2, window);
+#elif (M_RMA == RMA_PUT)
+              MPI_PUT(array + offset, 1, type2, next_rank, offset, 1, type2, window);
+#endif
 #elif (M_COMM == COMM_SENDRECV)
               MPI_Irecv(other + offset, 1, type2, prev_rank, 0, MPI_COMM_WORLD,
                         rreq + ireq);
@@ -171,22 +213,30 @@ int main(int argc, char** argv){
     mtime_global /= comm_size;
 
     if (rank == 0) {
+        char config[512];
 #if (M_COMM == COMM_RMA_ACTV)
-        fprintf(stdout,
-                "RMA-ACTIVE: mean send time = %e ms > bandwidth = %e GB/s\n",
-                mtime_global * 1e+3,
-                (M_N * M_N * M_N * sizeof(int)) / mtime_global / 1e+9);
+        snprintf(config,512,"[RMA-ACTIVE,");
 #elif (M_COMM == COMM_RMA_FENC)
-        fprintf(stdout,
-                "RMA-FENCE: mean send time = %e ms > bandwidth = %e GB/s\n",
-                mtime_global * 1e+3,
-                (M_N * M_N * M_N * sizeof(int)) / mtime_global / 1e+9);
+        snprintf(config,512,"[RMA-FENCE,");
 #elif (M_COMM == COMM_SENDRECV)
-        fprintf(stdout,
-                "SEND-RECV: mean send time = %e ms > bandwidth = %e GB/s\n",
-                mtime_global * 1e+3,
-                (M_N * M_N * M_N * sizeof(int)) / mtime_global / 1e+9);
+        snprintf(config,512,"[SEND-RECV,");
 #endif
+#if (M_ALLOC == ALLOC_WIN)
+        snprintf(config,512,"%s ALLOC-WIN,",config);
+#elif (M_ALLOC == ALLOC_USR)
+        snprintf(config,512,"%s ALLOC-USR,",config);
+#endif
+#if (M_RMA == RMA_PUT)
+        snprintf(config,512,"%s RMA-PUT,",config);
+#elif (M_RMA == RMA_GET)
+        snprintf(config,512,"%s RMA-GET,",config);
+#endif
+        fprintf(stdout,
+                "%s %d MSGS] time = %f ms > msg size = %f kB > ttl bdw = %f GB/s\n",
+                config, (M_N / M_NS) * (M_N / M_NS) * (M_N / M_NS),
+                mtime_global * 1e+3,
+                (M_NS * M_NS * M_NS * sizeof(int))/1.0e+3,
+                (M_N * M_N * M_N * sizeof(int)) / mtime_global / 1e+9);
         fflush(stdout);
     }
     //--------------------------------------------------------------------------
@@ -198,10 +248,21 @@ int main(int argc, char** argv){
 
     MPI_Group_free(&next_group);
     MPI_Group_free(&prev_group);
-    MPI_Win_free(&window);
 
+#if (M_ALLOC == ALLOC_USR || M_COMM == COMM_SENDRECV)
     free(array);
     free(other);
+    MPI_Win_free(&window);
+#elif (M_ALLOC == ALLOC_WIN)
+#if (M_RMA == RMA_PUT)
+    free(other);
+    MPI_Win_free(&window);
+#elif (M_RMA == RMA_GET)
+    free(array);
+    free(other);
+    MPI_Win_free(&window);
+#endif
+#endif
 
     MPI_Finalize();
 }
