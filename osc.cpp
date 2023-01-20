@@ -45,7 +45,6 @@
 #else
 #define M_NS 5 // NS is the size of the subarray (exchanged as one block)
 #endif
-#define IMAX 100
 
 #ifdef RMA
 #define M_RMA RMA
@@ -58,6 +57,10 @@
 #else
 #define M_ALLOC ALLOC_WIN
 #endif
+
+
+#define IWARM 2
+#define IMAX 20
 
 static int get_next_rank(const int rank, const int comm_size) {
   return (rank + comm_size / 2) % comm_size;
@@ -150,7 +153,7 @@ int main(int argc, char** argv){
 
     //--------------------------------------------------------------------------
     double mean_time;
-    for (int iter = 0; iter < IMAX; ++iter) {
+    for (int iter = 0; iter <(IWARM + IMAX); ++iter) {
         double tic = MPI_Wtime();
 #if (M_COMM == COMM_RMA_ACTV)
         MPI_Win_post(prev_group, 0, window);
@@ -229,7 +232,9 @@ int main(int argc, char** argv){
         MPI_Wait(&rreq,MPI_STATUS_IGNORE);
 #endif
         double toc = MPI_Wtime();
-        mean_time += (toc - tic) / IMAX;
+        if(iter >= IWARM){
+            mean_time += (toc - tic) / IMAX;
+        }
     }
 
     double mtime_global;
