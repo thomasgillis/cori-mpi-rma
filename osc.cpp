@@ -163,6 +163,7 @@ int main(int argc, char** argv){
         // wait for the notification of the next rank (the one I access)
         MPI_Issend(NULL,0,MPI_BYTE,next_rank,0,MPI_COMM_WORLD,&sreq);
         MPI_Wait(&sreq,MPI_STATUS_IGNORE);
+        MPI_Win_lock(MPI_LOCK_SHARED,next_rank,0,window);
 #endif
 
         // for each submatrix of size NSxNSxNS
@@ -188,16 +189,10 @@ int main(int argc, char** argv){
 #endif
 
 #if (M_COMM == COMM_RMA_ACTV || M_COMM == COMM_RMA_FENC || M_COMM == COMM_RMA_LOCK)
-#if (M_COMM == COMM_RMA_LOCK)
-              MPI_Win_lock(MPI_LOCK_SHARED,next_rank,0,window);
-#endif
 #if (M_RMA == RMA_GET)
               MPI_Get(other + offset, 1, type2, next_rank, offset, 1, type2, window);
 #elif (M_RMA == RMA_PUT)
               MPI_Put(array + offset, 1, type2, next_rank, offset, 1, type2, window);
-#endif
-#if (M_COMM == COMM_RMA_LOCK)
-              MPI_Win_unlock(next_rank,window);
 #endif
 #elif (M_COMM == COMM_SENDRECV)
               MPI_Irecv(other + offset, 1, type2, prev_rank, 0, MPI_COMM_WORLD,
@@ -224,10 +219,9 @@ int main(int argc, char** argv){
 #elif (M_COMM == COMM_RMA_LOCK)
         // complete the previous recev request
         MPI_Wait(&rreq,MPI_STATUS_IGNORE);
-        // notify the next rank (the one I access) that I am done
-        MPI_Win_lock(MPI_LOCK_SHARED, next_rank, 0, window);
         MPI_Win_flush(next_rank, window);
         MPI_Win_unlock(next_rank, window);
+        // notify the next rank (the one I access) that I am done
         MPI_Irecv(NULL,0,MPI_BYTE,next_rank,1,MPI_COMM_WORLD,&rreq);
         // wait for the notification of the prev rank (the one accessing my data)
         MPI_Issend(NULL,0,MPI_BYTE,prev_rank,1,MPI_COMM_WORLD,&sreq);
