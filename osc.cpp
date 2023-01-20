@@ -33,8 +33,7 @@
 #define M_MEM MEM_CONTIG
 #endif
 
-// the total communication size will be N^3 and split-up in NS^3 chunks, each chunk will be sent out 
-// independently
+// the total communication size will be N^3 and split-up in NS^3 chunks, each chunk will be sent out // independently
 #ifdef N
 #define M_N N
 #else
@@ -219,33 +218,34 @@ int main(int argc, char** argv){
     if (rank == 0) {
 
         char config[CONFIG_LEN];
+	snprintf(config,CONFIG_LEN,"[%s, %s, %s, %s,",
 #if (M_COMM == COMM_RMA_ACTV)
-        snprintf(config,CONFIG_LEN,"[RMA-ACTIVE,");
+        "RMA-ACTIV",
 #elif (M_COMM == COMM_RMA_FENC)
-        snprintf(config,CONFIG_LEN,"[RMA-FENCE,");
+        "RMA-FENCE",
 #elif (M_COMM == COMM_SENDRECV)
-        snprintf(config,CONFIG_LEN,"[SEND-RECV,");
+	"SEND-RECV",
 #endif
 #if (M_ALLOC == ALLOC_WIN)
-        snprintf(config,CONFIG_LEN,"%s ALLOC-WIN,",config);
+	"ALLOC_WIN",
 #elif (M_ALLOC == ALLOC_USR)
-        snprintf(config,CONFIG_LEN,"%s ALLOC-USR,",config);
+	"ALLOC_USR",
 #endif
 #if (M_RMA == RMA_PUT)
-        snprintf(config,CONFIG_LEN,"%s RMA-PUT,",config);
+	"RMA-PUT",
 #elif (M_RMA == RMA_GET)
-        snprintf(config,CONFIG_LEN,"%s RMA-GET,",config);
+	"RMA-GET",
 #endif
 #if (M_MEM == MEM_DATATYPE)
-        snprintf(config,CONFIG_LEN,"%s DATATYPE,",config);
+	"DATATYPE");
 #elif (M_MEM == MEM_CONTIG)
-        snprintf(config,CONFIG_LEN,"%s CONTIG,",config);
+	"CONTIG");
 #endif
         fprintf(stdout,
-                "%s %d MSGS] time = %f ms > msg size = %f kB > ttl bdw = %f GB/s\n",
+                "%s %d MSG, %6.d B/MSG] time = %f ms > ttl bdw = %f GB/s\n",
                 config, (M_N / M_NS) * (M_N / M_NS) * (M_N / M_NS),
+                (M_NS * M_NS * M_NS * sizeof(int)),
                 mtime_global * 1e+3,
-                (M_NS * M_NS * M_NS * sizeof(int))/1.0e+3,
                 (M_N * M_N * M_N * sizeof(int)) / mtime_global / 1e+9);
         fflush(stdout);
     }
