@@ -73,6 +73,7 @@ do
 				run_osc ${MPI_HOME} 0 ${MEM} ${ALLOC} ${RMA} ${NS} ${N}
 				run_osc ${MPI_HOME} 1 ${MEM} ${ALLOC} ${RMA} ${NS} ${N}
 				#run_osc ${MPI_HOME} 2 ${MEM} ${ALLOC} ${RMA} ${NS} ${N}
+				run_osc ${MPI_HOME} 3 ${MEM} ${ALLOC} ${RMA} ${NS} ${N}
 			done
 			echo " "
 		done

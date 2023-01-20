@@ -12,6 +12,7 @@
 #define COMM_SENDRECV 0
 #define COMM_RMA_ACTV 1
 #define COMM_RMA_FENC 2
+#define COMM_RMA_LOCK 3
 
 #define MEM_DATATYPE 0
 #define MEM_CONTIG 1
@@ -143,6 +144,8 @@ int main(int argc, char** argv){
         MPI_Request *sreq, *rreq;
         sreq = (MPI_Request *)malloc(sizeof(MPI_Request) * nreq);
         rreq = (MPI_Request *)malloc(sizeof(MPI_Request) * nreq);
+#elif (M_COMM == COMM_RMA_LOCK)
+        MPI_Request sreq, rreq;
 #endif
 
     //--------------------------------------------------------------------------
@@ -154,6 +157,12 @@ int main(int argc, char** argv){
         MPI_Win_start(next_group, 0, window);
 #elif (M_COMM == COMM_RMA_FENC)
         MPI_Win_fence(0, window);
+#elif (M_COMM == COMM_RMA_LOCK)
+        // notify the prev rank (the one accessing me) that I am ready
+        MPI_Irecv(NULL,0,MPI_BYTE,prev_rank,0,MPI_COMM_WORLD,&rreq);
+        // wait for the notification of the next rank (the one I access)
+        MPI_Issend(NULL,0,MPI_BYTE,next_rank,0,MPI_COMM_WORLD,&sreq);
+        MPI_Wait(&sreq,MPI_STATUS_IGNORE);
 #endif
 
         // for each submatrix of size NSxNSxNS
@@ -178,11 +187,17 @@ int main(int argc, char** argv){
               int offset = (M_NS * M_NS * M_NS) * ireq;
 #endif
 
-#if (M_COMM == COMM_RMA_ACTV || M_COMM == COMM_RMA_FENC)
+#if (M_COMM == COMM_RMA_ACTV || M_COMM == COMM_RMA_FENC || M_COMM == COMM_RMA_LOCK)
+#if (M_COMM == COMM_RMA_LOCK)
+              MPI_Win_lock(MPI_LOCK_SHARED,next_rank,0,window);
+#endif
 #if (M_RMA == RMA_GET)
               MPI_Get(other + offset, 1, type2, next_rank, offset, 1, type2, window);
 #elif (M_RMA == RMA_PUT)
               MPI_Put(array + offset, 1, type2, next_rank, offset, 1, type2, window);
+#endif
+#if (M_COMM == COMM_RMA_LOCK)
+              MPI_Win_unlock(next_rank,window);
 #endif
 #elif (M_COMM == COMM_SENDRECV)
               MPI_Irecv(other + offset, 1, type2, prev_rank, 0, MPI_COMM_WORLD,
@@ -206,6 +221,18 @@ int main(int argc, char** argv){
 #elif (M_COMM == COMM_SENDRECV)
         MPI_Waitall(nreq, sreq, MPI_STATUSES_IGNORE);
         MPI_Waitall(nreq, rreq, MPI_STATUSES_IGNORE);
+#elif (M_COMM == COMM_RMA_LOCK)
+        // complete the previous recev request
+        MPI_Wait(&rreq,MPI_STATUS_IGNORE);
+        // notify the next rank (the one I access) that I am done
+        MPI_Win_lock(MPI_LOCK_SHARED, next_rank, 0, window);
+        MPI_Win_flush(next_rank, window);
+        MPI_Win_unlock(next_rank, window);
+        MPI_Irecv(NULL,0,MPI_BYTE,next_rank,1,MPI_COMM_WORLD,&rreq);
+        // wait for the notification of the prev rank (the one accessing my data)
+        MPI_Issend(NULL,0,MPI_BYTE,prev_rank,1,MPI_COMM_WORLD,&sreq);
+        MPI_Wait(&sreq,MPI_STATUS_IGNORE);
+        MPI_Wait(&rreq,MPI_STATUS_IGNORE);
 #endif
         double toc = MPI_Wtime();
         mean_time += (toc - tic) / IMAX;
@@ -218,31 +245,34 @@ int main(int argc, char** argv){
     if (rank == 0) {
 
         char config[CONFIG_LEN];
-	snprintf(config,CONFIG_LEN,"[%s, %s, %s, %s,",
+        snprintf(config,CONFIG_LEN,"[%s, %s, %s, %s,",
 #if (M_COMM == COMM_RMA_ACTV)
-        "RMA-ACTIV",
+                "RMA-ACTIV",
 #elif (M_COMM == COMM_RMA_FENC)
-        "RMA-FENCE",
+                "RMA-FENCE",
+#elif (M_COMM == COMM_RMA_LOCK)
+                "RMA-LOCK ",
 #elif (M_COMM == COMM_SENDRECV)
-	"SEND-RECV",
+                "SEND-RECV",
 #endif
 #if (M_ALLOC == ALLOC_WIN)
-	"ALLOC_WIN",
+                "ALLOC_WIN",
 #elif (M_ALLOC == ALLOC_USR)
-	"ALLOC_USR",
+                "ALLOC_USR",
 #endif
 #if (M_RMA == RMA_PUT)
-	"RMA-PUT",
+                "RMA-PUT",
 #elif (M_RMA == RMA_GET)
-	"RMA-GET",
+                "RMA-GET",
 #endif
 #if (M_MEM == MEM_DATATYPE)
-	"DATATYPE");
+                "DATATYPE"
 #elif (M_MEM == MEM_CONTIG)
-	"CONTIG");
+                "CONTIG"
 #endif
+                );
         fprintf(stdout,
-                "%s %d MSG, %6.d B/MSG] time = %f ms > ttl bdw = %f GB/s\n",
+                "%s %d MSG, %6.ld B/MSG] time = %f ms > ttl bdw = %f GB/s\n",
                 config, (M_N / M_NS) * (M_N / M_NS) * (M_N / M_NS),
                 (M_NS * M_NS * M_NS * sizeof(int)),
                 mtime_global * 1e+3,
