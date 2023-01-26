@@ -222,7 +222,8 @@ int main(int argc, char** argv){
 #elif (M_COMM == COMM_RMA_LOCK)
         // complete the previous recev request
         MPI_Wait(&rreq,MPI_STATUS_IGNORE);
-        MPI_Win_flush(next_rank, window);
+        // the flush is not needed, the lock will do it
+        // MPI_Win_flush(next_rank, window);
         MPI_Win_unlock(next_rank, window);
         // notify the next rank (the one I access) that I am done
         MPI_Irecv(NULL,0,MPI_BYTE,next_rank,1,MPI_COMM_WORLD,&rreq);
